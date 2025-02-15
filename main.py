@@ -12,43 +12,62 @@ def parse_time_slot(slot):
     return (start_h, start_m), (end_h, end_m)
 
 def parse_weeks(week_str):
-    """解析周数规则，返回周数列表"""
-    is_odd = "单周" in week_str
-    is_even = "双周" in week_str
-    week_str = week_str.replace("单周", "").replace("双周", "").strip()
-    start, end = map(int, week_str.split('-'))
-    weeks = list(range(start, end+1))
-    
-    if is_odd:
-        return [w for w in weeks if w % 2 == 1]
-    if is_even:
-        return [w for w in weeks if w % 2 == 0]
-    return weeks
+    """解析周数规则的健壮版本"""
+    try:
+        is_odd = "单" in week_str
+        is_even = "双" in week_str
+        
+        # 提取纯数字部分
+        numbers = re.findall(r'\d+', week_str)
+        if len(numbers) < 2:
+            return []
+            
+        start = int(numbers[0])
+        end = int(numbers[1])
+        weeks = list(range(start, end+1))
+        
+        if is_odd:
+            return [w for w in weeks if w % 2 == 1]
+        if is_even:
+            return [w for w in weeks if w % 2 == 0]
+        return weeks
+    except:
+        return []
+
 
 def get_course_info(cell):
-    """解析课程单元格信息"""
-    match = re.match(r'(.*?)\s+([^(]+?)\s*\((.*?)\)', cell.strip())
-    if not match:
-        return None
+    """解析课程单元格信息的优化版本"""
+    # 分离课程主体和括号内容
+    main_part, _, bracket_part = cell.strip().partition(')')
+    if '(' in main_part:
+        main_part, bracket_content = main_part.split('(', 1)
+        bracket_part = bracket_content + ')' + bracket_part
     
-    course_name = match.group(1).strip()
-    teacher = match.group(2).strip()
-    details = match.group(3).split()
+    # 提取课程名称和教师
+    parts = main_part.strip().rsplit(' ', 1)
+    course_name = parts[0].strip()
+    teacher = parts[1].strip() if len(parts) > 1 else ""
     
+    # 解析括号内容
     weeks = []
-    location = ""
-    for item in details:
-        if any(c.isdigit() for c in item):
-            weeks.extend(parse_weeks(item))
-        else:
-            location += item
+    location = []
+    if bracket_part:
+        # 使用更精确的周数匹配模式
+        week_matches = re.findall(r'([\d\-]+[单双]?周?)', bracket_part)
+        for match in week_matches:
+            weeks.extend(parse_weeks(match))
+        
+        # 移除已匹配的周数信息，剩余部分作为地点
+        location_str = re.sub(r'([\d\-]+[单双]?周?)', '', bracket_part)
+        location = [s.strip() for s in location_str.split() if s.strip()]
     
     return {
         "course": course_name,
         "teacher": teacher,
         "weeks": sorted(list(set(weeks))),
-        "location": location
+        "location": ' '.join(location)
     }
+
 
 # 配置信息
 start_date = datetime(2025, 2, 17)  # 第一周周一
