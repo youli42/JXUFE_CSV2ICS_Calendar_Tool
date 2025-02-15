@@ -1,8 +1,8 @@
 import csv
-from icalendar import Calendar, Event, vRecur
-from datetime import datetime, timedelta
 import re
 import uuid
+from datetime import datetime, timedelta
+from icalendar import Calendar, Event, Alarm
 
 def parse_time_slot(slot):
     """解析节次时间"""
@@ -69,9 +69,43 @@ def get_course_info(cell):
         "location": ' '.join(location)
     }
 
+def parse_slot_number(slot_str):
+    """精确提取节次数字"""
+    match = re.search(r'^(\d{1,2})', slot_str)
+    return match.group(1) if match else None
+
+def generate_event(info, slot_num, week, weekday):
+    """生成独立事件的核心函数"""
+    event = Event()
+    
+    # 计算精确时间
+    start_time_str, end_time_str = time_slots[slot_num]
+    delta_days = (weekday - 1) + (week - 1) * 7
+    event_date = start_date + timedelta(days=delta_days)
+    
+    # 时间格式标准化
+    start_dt = datetime.combine(
+        event_date, 
+        datetime.strptime(start_time_str, "%H:%M").time()
+    )
+    end_dt = datetime.combine(
+        event_date,
+        datetime.strptime(end_time_str, "%H:%M").time()
+    )
+    
+    # 设置事件属性
+    event.add('summary', f"{info['course']} - {info['teacher']}")
+    event.add('dtstart', start_dt)
+    event.add('dtend', end_dt)
+    event.add('location', info['location'])
+    event.add('dtstamp', datetime.now())
+    event.add('uid', f"{info['course']}_{slot_num}_{week}_{weekday}_{uuid.uuid4()}@courseschedule")
+    
+    return event
 
 # 配置信息
 start_date = datetime(2025, 2, 17)  # 第一周周一
+# 修改后的时间配置（完整节次对应）
 time_slots = {
     '1': ('08:00', '08:45'),
     '2': ('08:50', '09:35'),
@@ -91,58 +125,44 @@ cal = Calendar()
 cal.add('prodid', '-//Course Schedule//mxm.dk//')
 cal.add('version', '2.0')
 
-# 修改后的主循环部分
+# 主处理循环修改部分
 with open('courses.csv', encoding='utf-8-sig') as csvfile:
     reader = csv.DictReader(csvfile)
-    fieldnames = [name.strip() for name in reader.fieldnames if name.strip()]
-    reader = csv.DictReader(csvfile, fieldnames=fieldnames)
-    next(reader)  # 跳过标题行
-
+    # 处理列名中的异常空格
+    reader.fieldnames = [name.strip().replace('\ufeff', '') for name in reader.fieldnames]  
+    
     for row in reader:
-        slot = row.get('节次', '')
-        if not slot:
+        # 列名检查
+        if '节次' not in row:
             continue
-
-        # 获取节次时间
-        slot_num = slot[0]
-        if slot_num not in time_slots:
+            
+        # 精确获取节次数字
+        slot_num = parse_slot_number(row['节次'])
+        if not slot_num or slot_num not in time_slots:
             continue
-
-        for weekday in range(1, 8):
-            day_key = ['星期一','星期二','星期三','星期四','星期五','星期六','星期日'][weekday-1]
+            
+        # 遍历每一天
+        for weekday in range(1, 8):  # 1=周一,...,7=周日
+            day_key = [
+                '星期一','星期二','星期三',
+                '星期四','星期五','星期六','星期日'
+            ][weekday-1]
+            
             cell = row.get(day_key, '').strip()
             if not cell or cell == ' ':
                 continue
-
+                
             info = get_course_info(cell)
             if not info or not info['weeks']:
                 continue
-
-            start_time_str, end_time_str = time_slots[slot_num]
-
-            # 为每个周次创建独立事件
+                
+            # 为每个周次生成独立事件
             for week in info['weeks']:
-                event = Event()
-                event.add('summary', f"{info['course']} - {info['teacher']}")
-                event.add('location', info['location'])
-
-                # 计算具体日期
-                delta_days = (weekday - 1) + (week - 1) * 7
-                event_date = start_date + timedelta(days=delta_days)
-
-                # 设置时间
-                start_time = datetime.strptime(start_time_str, "%H:%M").time()
-                end_time = datetime.strptime(end_time_str, "%H:%M").time()
-
-                # 修改uid生成规则（确保唯一性）
-                # event.add('uid', f"{uuid.uuid4()}@courseschedule")
-
-                event.add('dtstart', datetime.combine(event_date, start_time))
-                event.add('dtend', datetime.combine(event_date, end_time))
-                event.add('dtstamp', datetime.now())
-
-                # event.add('uid', f"{event_date.strftime('%Y%m%d')}{slot_num}@{info['course']}")
-
+                # 跳过无效周次
+                if week < 1 or week > 16:
+                    continue
+                    
+                event = generate_event(info, slot_num, week, weekday)
                 cal.add_component(event)
 
 
