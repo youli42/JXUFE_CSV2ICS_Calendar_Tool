@@ -3,9 +3,10 @@ import re
 import uuid
 import os
 from datetime import datetime, timedelta
-from tkinter import Tk, filedialog, messagebox
-from tkinter.ttk import Progressbar
+from tkinter import Tk, filedialog, messagebox, ttk
+from tkinter.ttk import Frame, Label, Button, Progressbar
 from icalendar import Calendar, Event
+from tkcalendar import DateEntry  # 需要安装：pip install tkcalendar
 
 # ---------------------------- 核心解析逻辑 ----------------------------
 def parse_time_slot(slot):
@@ -84,8 +85,39 @@ def get_course_info(cell):
 class CourseConverterGUI:
     def __init__(self):
         self.root = Tk()
-        self.root.title("课程表转换工具 v2.0")
-        self.root.withdraw()  # 隐藏主窗口
+        self.root.title("课程表转换工具 v3.0")
+        self.root.geometry("400x250")
+        self.start_date = None  # 新增日期存储
+        
+        # 创建主界面组件
+        self.create_widgets()
+        
+    def create_widgets(self):
+        """创建主界面组件"""
+        frame = Frame(self.root, padding=20)
+        frame.pack(expand=True)
+        
+        # 日期选择组件
+        Label(frame, text="请选择学期第一周周一：").grid(row=0, column=0, sticky='w')
+        self.cal = DateEntry(
+            frame,
+            date_pattern='yyyy-mm-dd',
+            mindate=datetime(2025, 1, 1),
+            maxdate=datetime(2080, 12, 31)
+        )
+        self.cal.grid(row=1, column=0, pady=10, sticky='ew')
+        
+        # 文件选择按钮
+        self.file_btn = Button(
+            frame,
+            text="选择课程表CSV文件",
+            command=self.select_file
+        )
+        self.file_btn.grid(row=2, column=0, pady=15, sticky='ew')
+        
+        # 状态标签
+        self.status_label = Label(frame, text="")
+        self.status_label.grid(row=3, column=0)
         
         self.time_slots = {
             '1': ('08:00', '08:45'),
@@ -102,17 +134,33 @@ class CourseConverterGUI:
             '12': ('20:20', '21:05')
         }
         
-        self.start_date = datetime(2025, 2, 17) #指定开始时间
-        self.select_file()
+
+
+    def validate_date(self):
+        """验证选择的日期是否为周一"""
+        selected_date = self.cal.get_date()
+        if selected_date.weekday() != 0:  # 0代表周一
+            messagebox.showerror(
+                "日期错误",
+                "请选择星期一作为学期开始日期！"
+            )
+            return False
+        self.start_date = selected_date
+        return True
 
     def select_file(self):
-        """文件选择对话框"""
+        """处理文件选择流程"""
+        if not self.validate_date():
+            return
+            
         file_path = filedialog.askopenfilename(
             title="选择课程表CSV文件",
             filetypes=[("CSV文件", "*.csv"), ("所有文件", "*.*")]
         )
         
         if file_path:
+            self.status_label.config(text="正在转换...")
+            self.root.update()  # 强制刷新界面
             self.convert_file(file_path)
         else:
             if messagebox.askretrycancel("提示", "您未选择文件，是否重试？"):
@@ -141,7 +189,7 @@ class CourseConverterGUI:
         return event
 
     def convert_file(self, csv_path):
-        """执行转换的核心方法"""
+        """包含日期验证的转换方法"""
         try:
             # 创建进度窗口
             progress_win = Tk()
@@ -152,9 +200,11 @@ class CourseConverterGUI:
             
             # 初始化日历
             cal = Calendar()
-            cal.add('prodid', '-//Course Schedule//mxm.dk//')
+            cal.add('prodid', '-//智能课程表转换器//')
             cal.add('version', '2.0')
-            
+
+            # 处理CSV内容（原有解析逻辑）
+            # ...（保留原有课程解析和事件生成代码）...
             # 处理CSV内容
             with open(csv_path, 'r', encoding='utf-8-sig') as csvfile:
                 reader = csv.DictReader(csvfile)
@@ -207,7 +257,9 @@ class CourseConverterGUI:
                 parent=self.root
             )
         finally:
-            self.root.destroy()
+            self.status_label.config(text="")
+            # 清理操作
 
 if __name__ == "__main__":
     app = CourseConverterGUI()
+    app.root.mainloop()
