@@ -40,43 +40,45 @@ def parse_weeks(week_str):
         return []
 
 def get_course_info(cell):
-    """解析课程单元格信息"""
+    """优化后的课程信息解析函数"""
     cell = cell.strip()
     if not cell or cell == ' ':
         return None
     
-    # 分离主体和括号内容
+    # 使用更精确的分割方式
     main_part, bracket_part = None, None
     if '(' in cell:
-        parts = cell.split('(', 1)
+        parts = re.split(r'[()]', cell)  # 使用正则分割括号
         main_part = parts[0].strip()
-        bracket_part = parts[1].split(')')[0].strip()
+        bracket_part = ' '.join(parts[1::2])  # 获取所有括号内的内容
     else:
         main_part = cell
     
     # 解析课程名称和教师
-    name_teacher = main_part.rsplit(' ', 1)
-    course_name = name_teacher[0].strip()
-    teacher = name_teacher[1].strip() if len(name_teacher) > 1 else ""
+    course_name, teacher = re.match(r'(.+?)\s+([^\s(]+)$', main_part).groups()
     
     # 解析周次和地点
     weeks = []
-    location = []
+    location_parts = []
+    
     if bracket_part:
-        # 提取周次信息
-        week_matches = re.findall(r'([\d\-]+[单双]?周?)', bracket_part)
+        # 使用更精准的周次匹配模式
+        week_pattern = r'(\d+-\d+[单双]?)'
+        week_matches = re.findall(week_pattern, bracket_part)
         for match in week_matches:
             weeks.extend(parse_weeks(match))
         
-        # 剩余部分作为地点
-        location = re.sub(r'([\d\-]+[单双]?周?)', '', bracket_part).strip()
+        # 移除周次信息后的剩余部分作为地点
+        location_str = re.sub(week_pattern, '', bracket_part).strip()
+        location_parts = [s.strip() for s in location_str.split() if s.strip()]
     
     return {
-        "course": course_name,
-        "teacher": teacher,
+        "course": course_name.strip(),
+        "teacher": teacher.strip(),
         "weeks": sorted(list(set(weeks))),
-        "location": location
+        "location": ' '.join(location_parts)
     }
+
 
 # ---------------------------- 图形界面组件 ----------------------------
 class CourseConverterGUI:
@@ -100,7 +102,7 @@ class CourseConverterGUI:
             '12': ('20:20', '21:05')
         }
         
-        self.start_date = datetime(2025, 2, 17)
+        self.start_date = datetime(2025, 2, 17) #指定开始时间
         self.select_file()
 
     def select_file(self):
